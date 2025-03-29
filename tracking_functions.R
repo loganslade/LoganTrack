@@ -541,47 +541,60 @@ unregister_dopar <- function() {
 }
 unregister_dopar()
 
-DetectMitosis <- function(df, track, rise_thresh, fall_thresh, gap, sep){
-  track_df <- filter(df, track_id == track) %>% arrange(time.y) 
-  rapid_rises <- which(track_df$d_mscore > rise_thresh)
-  rapid_falls <- which(track_df$d_mscore < fall_thresh)
+DetectMitosis <- function(df, pos, rise_thresh, fall_thresh, gap, sep){
+  old <- Sys.time()
+  mex_i_id <- c()
+  sample <- df %>% filter(n_position == pos)
+  tracks <- unique(sample$track_id)
   
-  paired_rises <- sapply(rapid_rises, function(rise) {
-    # Find the first fall within the specified time gap
-    fall_after_rise <- rapid_falls[rapid_falls > rise & rapid_falls <= (rise + gap)]
-    if (length(fall_after_rise) > 0) return(rise) else return(NA)
-  })
-  
-  
-  # Filter out unpaired rises
-  paired_rises <- na.omit(paired_rises)
-  if(length(paired_rises) == 0){return(NA)}
-  
-  paired_falls <- sapply(paired_rises, function(rise) {
-    min(rapid_falls[rapid_falls > rise & rapid_falls <= (rise + gap)])})
-  
-  
-  #Filter out doublets
-  
-  paired_events <- data.frame(
-    Rise_Time = paired_rises,
-    Fall_Time = paired_falls
-  )
-  
-  filtered_events <- paired_events
-  filtered_events <- filtered_events[order(filtered_events$Rise_Time), ] # Sort by rise time
-  
-  if(nrow(filtered_events) >1){
-    for (i in nrow(filtered_events):2) {
-      if (filtered_events$Rise_Time[i] - filtered_events$Fall_Time[i - 1] < sep) {
-        filtered_events <- filtered_events[-i, ]  # Remove the closer event
+  for(track in tracks){
+    track_df <- sample %>% group_by(track_id) %>% filter(track_id == track) %>% arrange(time.y)
+    
+    
+    rapid_rises <- which(track_df$d_mscore > rise_thresh)
+    rapid_falls <- which(track_df$d_mscore < fall_thresh)
+    
+    
+    paired_rises <- sapply(rapid_rises, function(rise) {
+      # Find the first fall within the specified time gap
+      fall_after_rise <- rapid_falls[rapid_falls > rise & rapid_falls <= (rise + gap)]
+      if (length(fall_after_rise) > 0) return(rise) else {return(NA)}
+    })
+    
+    
+    # Filter out unpaired rises
+    paired_rises <- na.omit(paired_rises)
+    if(length(paired_rises) == 0){next}
+    
+    paired_falls <- sapply(paired_rises, function(rise) {
+      min(rapid_falls[rapid_falls > rise & rapid_falls <= (rise + gap)])})
+    
+    
+    #Filter out doublets
+    
+    paired_events <- data.frame(
+      Rise_Time = paired_rises,
+      Fall_Time = paired_falls
+    )
+    
+    filtered_events <- paired_events
+    filtered_events <- filtered_events[order(filtered_events$Rise_Time), ] # Sort by rise time
+    
+    if(nrow(filtered_events) >1){
+      for (i in nrow(filtered_events):2) {
+        if (filtered_events$Rise_Time[i] - filtered_events$Fall_Time[i - 1] < sep) {
+          filtered_events <- filtered_events[-i, ]  # Remove the closer event
+        }
       }
     }
+    
+    mex_i_id <- c(mex_i_id, track_df$i_id[filtered_events$Fall_Time])
   }
-  
-  mex_i_id <- track_df$i_id[filtered_events$Fall_Time]
+  new <- Sys.time() - old
+  print(new)
   return(mex_i_id)
 }
+
 
 
 back_track_jitter <- function(df, positions, i_jump, m_jump, s_jump, 
