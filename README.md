@@ -1,0 +1,5 @@
+Logan track is a script designed to efficiently extract regions of interest from live cell imaging experiments and then link objects together frame by frame. 
+
+In general, efficiency will not be very high. On average, except to get around 25% of possible complete tracks per movie (so 25 complete tracks out of a possible 100 cells at the beginning of the movie). Efficiency will be higher in shorter experiments or when cell density is lower (The best I get in a 48 hour movie is normally 50%). I generally recommend using 2x2 tiling and making multiple films for each treatment to get the most possible tracks. 
+
+Tracking accuracy is very high. The algorithm prioritizes error free complete tracks and does not track cells that come into frame between the beginning and the end of the movie. The linking error rate is roughly 0.1% (1 error every 1000 object linkages). In a 48 hour experiment, this corresponds to about 70-90% of complete tracks that are completely error free. It will be more error prone when cell density is high. 
