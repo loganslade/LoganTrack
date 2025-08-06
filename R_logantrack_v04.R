@@ -121,7 +121,7 @@ for(channel in cyto_var) {
 #Extract Information from images#
 #This only works if the time is 3 characters and the position is 2 characters#
 cells <- cytonuc %>% mutate(time =  frame,
-                            n_position = gsub("XY","",str_extract(image, "(XY[0-9][0-9])")))
+                            n_position = gsub("XY","",str_extract(image, regex("(XY[0-9][0-9])", ignore_case = TRUE))))
 
 #match positions with treatments, if it is a multi treatment experiment, and order the level of the treatments#
 import_info <- T
@@ -482,7 +482,6 @@ pheatmap(loghm, cluster_cols = F, scale = "none", col = mycolorm,
 
 
 #####Track images export#####
-#Setting directories for finding the raw images and saving the labeled images#
 dir <- gsub("\\\\", "/", readClipboard())
 dir
 
@@ -490,14 +489,30 @@ save <- gsub("\\\\", "/", readClipboard())
 save
 setwd(save)
 
-#Set the dataframe with the tracks you want to export# 
-toidf <- mtrackedfGens %>% filter() 
+toidf <- tracks_filt %>% filter() 
 
 toidf <- toidf %>% mutate(path = paste(dir,"/",gsub('.{7}$', '', image),"T",frame,"_C1.png",sep=""))
 images_seq <- unique(toidf$path)
 
+image <- image_read(toidf$path[1])
+image <- image_annotate(image, paste0(toidf$track_id[1]), size = 10, color = "red", degrees = 0, location = paste0("+",(toidf$x[1]/2),"+",(toidf$y[1]/2)))
+crop <- image_crop(image, paste0("90x90+",((toidf$x[1]/2)-45),"+",((toidf$y[1]/2)-45)))
+crop <- image_scale(crop, "180x180")
+crop
+a <- 0
+for(f in 1:length(images_seq)){
+  image <- image_read(toidf$path[f])
+  image <- image_annotate(image, paste0(toidf$track_id[f]), size = 10, color = "red", degrees = 0, location = paste0("+",(toidf$x[f]/2),"+",(toidf$y[f]/2)))
+  crop <- image_crop(image, paste0("90x90+",((toidf$x[f]/2)-45),"+",((toidf$y[f]/2)-45)))
+  crop <- image_scale(crop, "180x180")
+  image_write(crop,paste0("T",toidf$track_id[f],"_T",toidf$n_image[f],".png"), compression="Lossless")
+  a <- a+1
+  if(a == 50){print(a)
+              gc()
+              a <- 0}
+                                }
 
-#Loop for writing labels on the images and then saving the image#
+
 for(i in 1:length(images_seq)){
   print(images_seq[i])
   filt <- toidf %>% filter(path == images_seq[i])
@@ -512,25 +527,6 @@ for(i in 1:length(images_seq)){
   graphics.off() 
 }
 
-#Loop to export a cropped image of a single track, which follows the cell around#
-track_id_export <- "330_11" #Change this to the track you want to export#
-toidf <- mtrackedfGens %>% filter(track_id == track_id_export) #
-
-toidf <- toidf %>% mutate(path = paste(dir,"/",gsub('.{7}$', '', image),"T",frame,"_C1.png",sep=""))
-images_seq <- unique(toidf$path)
-
-a <- 0
-for(f in 1:length(images_seq)){
-  image <- image_read(toidf$path[f])
-  image <- image_annotate(image, paste0(toidf$track_id[f]), size = 10, color = "red", degrees = 0, location = paste0("+",(toidf$x[f]/2),"+",(toidf$y[f]/2)))
-  crop <- image_crop(image, paste0("90x90+",((toidf$x[f]/2)-45),"+",((toidf$y[f]/2)-45)))
-  crop <- image_scale(crop, "180x180")
-  image_write(crop,paste0("T",toidf$track_id[f],"_T",toidf$n_image[f],".png"), compression="Lossless")
-  a <- a+1
-  if(a == 50){print(a)
-              gc()
-              a <- 0}
-                                }
 #####Last Frame object info#####
 last_frame <- mtrackedfGens_binned %>% filter(time.x == maxframe) %>% dplyr::select(n_position,image, track_id, i_id, time.y, dhb_cn, mean_cdc6, 
                                                                              mean_cdc6_cyto, mean_foci, x, y, d_mscore, scale_ms, time.yomex, h_rel_fm, h_rel_lm130, h_rel_lm, bin)
