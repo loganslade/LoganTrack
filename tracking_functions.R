@@ -1578,7 +1578,7 @@ TrackLinkJitterv7 <- function(positions, btracked, ftracked, jump, m_thresh,
     btrack <- btrack_end[btrack_end$track_id == i,]
     next_frame <- btrack$time.y - 1
     
-    if(jitter_correction == T && c %in% jitters$time){shift_x <- jitters$jitter_x[jitters$time == c]
+    {if(jitter_correction == T && c %in% jitters$time){shift_x <- jitters$jitter_x[jitters$time == c]
                                                       shift_y <- jitters$jitter_y[jitters$time == c]}
       
       else{shift_x <- 0 
