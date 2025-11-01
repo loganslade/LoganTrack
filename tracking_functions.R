@@ -1105,7 +1105,7 @@ TotalForwardTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jit
                 d_min <- min(next_object$distance)
                 d_max <- max(next_object$distance)
                 d_ratio <- d_max/d_min
-                if(d_ratio < 1.5) {break}
+                if(d_ratio < 1.5 && cur_object$scale_ms < m_thresh) {break}
                 next_object <- next_object %>% slice(which.min(distance)) #make it select only short distances
                 if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break}
                 x <- x+1
@@ -1170,7 +1170,7 @@ TotalForwardTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jit
                 d_min <- min(next_object$distance)
                 d_max <- max(next_object$distance)
                 d_ratio <- d_max/d_min
-                if(d_ratio < 1.5) {break}
+                if(d_ratio < 1.5 && cur_object$scale_ms < m_thresh) {break}
                 next_object <- next_object %>% slice(which.min(distance)) 
                 if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break}
                 x <- x+1
