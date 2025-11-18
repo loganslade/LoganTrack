@@ -673,10 +673,10 @@ back_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_corr
 }
 
 forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
-                                 jitter_frames, smod, m_thresh, frame_limit_f){
+                                 jitter_frames, smod, m_thresh, frame_limit_f, minframe){
   df$time <- as.numeric(df$time)
   tracking <- list()
-  cur_frame <- 1
+  cur_frame <- minframe
   nframe <- max(df$time)
   x <- 0
   
@@ -849,10 +849,10 @@ forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_c
 }
 
 total_forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
-                                       jitter_frames, smod, m_thresh, frame_limit_f){
+                                       jitter_frames, smod, m_thresh, frame_limit_f, minframe){
   df$time <- as.numeric(df$time)
   tracking <- list()
-  cur_frame <- 1
+  cur_frame <- minframe
   nframe <- max(df$time)
   x <- 0
   
@@ -1027,10 +1027,10 @@ total_forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, ji
 }
 
 TotalForwardTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
-                                      jitter_frames, smod, m_thresh, frame_limit_f){
+                                      jitter_frames, smod, m_thresh, frame_limit_f, minframe){
   df$time <- as.numeric(df$time)
   tracking <- list()
-  cur_frame <- 1
+  cur_frame <- minframe
   nframe <- max(df$time)
   x <- 0
   
@@ -1376,10 +1376,10 @@ BackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter_corr
 }
 
 ForwardTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
-                                 jitter_frames, smod, m_thresh, frame_limit_f){
+                                 jitter_frames, smod, m_thresh, frame_limit_f, minframe){
   df$time <- as.numeric(df$time)
   tracking <- list()
-  cur_frame <- 1
+  cur_frame <- minframe
   nframe <- max(df$time)
   x <- 0
   
@@ -1617,8 +1617,8 @@ TrackLinkJitterv7 <- function(positions, btracked, ftracked, jump, m_thresh,
 }
 
 ForwardTrackAssembly <- function(positions, ftracked, jump, m_thresh, 
-                          StabilityValue, jitter_correction, jitter_frames){
-  cur_frame <- 1
+                          StabilityValue, jitter_correction, jitter_frames, minframe){
+  cur_frame <- minframe
   max.jump <- jump
   maxframe <- max(as.numeric(ftracked$time.y)) 
   
@@ -1791,10 +1791,19 @@ TotalBackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter
               
               search <- track_set[track_set$time == c,]
               
-              #Track objects with opticalflow for the T1 - T2 frames#
+              #Track objects for the T1 - T2 frames#
               
-              next_object <- filter(search, between(search$x,((cur_object$x + (cur_object$flow_x*smod))- max.jump), ((cur_object$x + (cur_object$flow_x*smod)) + max.jump)) &
-                                      between(search$y,((cur_object$y + (cur_object$flow_y*smod)) - max.jump), ((cur_object$y + (cur_object$flow_y*smod)) + max.jump))) 
+              if(cur_object$scale_ms > m_thresh){
+                
+                next_object <- filter(search, between(search$x,((cur_object$x + (cur_object$flow_x*smod))- max.jump), ((cur_object$x + (cur_object$flow_x*smod)) + max.jump)) &
+                                        between(search$y,((cur_object$y + (cur_object$flow_y*smod)) - max.jump), ((cur_object$y + (cur_object$flow_y*smod)) + max.jump))) 
+              }
+              
+              else{
+                next_object <- filter(search, between(search$x,(cur_object$x-shift_x - max.jump), (cur_object$x-shift_x + max.jump)) &
+                                        between(search$y,(cur_object$y-shift_y - max.jump), (cur_object$y-shift_y + max.jump))) 
+              }
+              
               
               if(nrow(next_object) == 1){
                 if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break}
@@ -1814,7 +1823,13 @@ TotalBackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter
                 tracking$enext_y[x] <- next_object$y+y_traj
                 cur_object <- next_object}
               else if(nrow(next_object) >1){
-                next_object <- next_object %>% mutate(distance = sqrt((((cur_object$x+(cur_object$flow_x*smod))-x)^2)+(((cur_object$y+cur_object$flow_y*smod)-y)^2))) 
+                
+                if(cur_object$scale_ms > m_thresh){
+                  next_object <- next_object %>% mutate(distance = sqrt((((cur_object$x+(cur_object$flow_x*smod))-x)^2)+(((cur_object$y+cur_object$flow_y*smod)-y)^2)))} 
+                
+                else{
+                  next_object <- next_object %>% mutate(distance = sqrt((((cur_object$x-shift_x)-x)^2)+(((cur_object$y-shift_y)-y)^2))) 
+                    }
                 d_min <- min(next_object$distance)
                 d_max <- max(next_object$distance)
                 d_ratio <- d_max/d_min
