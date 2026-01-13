@@ -1757,7 +1757,8 @@ TotalBackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter
   x <- 0
   
   for(p in positions){
-    old <- Sys.time()
+
+    print(paste0("Tracking position:",p))
     sample <- df %>% filter(n_position == p)
     
     if(jitter_correction == T){
@@ -1767,7 +1768,6 @@ TotalBackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter
     
     while(cur_frame > nframe){                  
       nobj_frame <- sample %>% filter(time == cur_frame) %>% nrow(.)
-      print(paste0("Tracking ",nobj_frame, " objects in position ",p))
       for(b in 1:nobj_frame){
         set <- track_set[track_set$time == cur_frame,]
         cur_object <- set[b,]
@@ -1929,8 +1929,6 @@ TotalBackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter
       }
       cur_frame <- cur_frame-1
     }
-    new <- Sys.time() - old
-    print(new)
   }
   tracks <- as.data.frame(tracking)
   return(tracks)
