@@ -178,87 +178,18 @@ if test_mode:
 
 #%%
 del(timg)
-#Main segmentation loop for stacks# 
-#This includes a component to downscale the image, then upscale the masks which saves time#    
-#Seg loop for single images#
-
-for filename, filelist in zip(files, file_list):
-    timg = skimage.io.imread(filename, plugin="tifffile", is_ome=False)
-    for img, frame in zip(timg,times): #Added limiters to stop from processing the blank frames#
-        
-        start_time = time.time()
-        
-        if segmentation == True: 
-        
-            if shading_corr == True: img = img/sh_dict[track_channel]
-            #imgth = skimage.morphology.white_tophat(image = img, footprint=footprint)
-            img_ds = skimage.transform.rescale(img, 0.5, anti_aliasing=True)
-            imgsmooth = skimage.filters.gaussian(img_ds, sigma=0.2)
-            masks, flows, styles, diams = model.eval(imgsmooth, diameter=diameter, channels=channels, 
-                                                     flow_threshold=flow_thersh, cellprob_threshold=cellprob, batch_size = 16) #22,0.6,1.5
-        
-            masks_ds = np.round(skimage.transform.rescale(masks, 2, anti_aliasing=True)*2**16,0).astype(np.uint16)
-            # save masks as png
-            save_file = f'{filelist[:-4]}_T{frame}_mask.png'
-            save_path = os.path.join(save_dir,save_file)
-            imsave(save_path,masks_ds.astype("uint16"), check_contrast=False)
-        
-        #Exports the last frame of each position, used for matching with fixed data later#
-        
-        if frame == max(times): 
-            if last_frame_export == True: 
-                save_file = f'{filelist[:-6]}T{frame}_{track_channel}.tiff'
-                save_path_lf = os.path.join(last_frame_dir,save_file)
-                imsave(save_path_lf,img.astype("uint16"), check_contrast=False)
-        
-        #Save image with/without segmentation outlines as downsampled png for QC tracks
-        
-        if qc_image_export == True: 
-           
-            if image_overlay == True:
-               
-                img_ol = np.stack([imgsmooth] * 3, axis=-1)
-    
-                outlines = skimage.segmentation.find_boundaries(masks, mode="inner")
-                outY, outX = np.nonzero(outlines)
-                
-                img_ol = img_ol/ np.max(img_ol)
-                img_ol[outY, outX] = np.array([1,0,1]) 
-                
-                
-                
-                img_ol8ds = skimage.transform.rescale(img_ol, 0.5, anti_aliasing=True, channel_axis=2)
-                img_ol8ds = (img_ol8ds*255).astype(np.uint8)
-                
-                
-                save_file = f'{filelist[:-6]}T{frame}_{track_channel}.png'
-                save_path_qc = os.path.join(img_save_dir,save_file)
-                imsave(save_path_qc,img_ol8ds, check_contrast=False)
-            else: 
-                img_ol = img_ol/ np.max(img_ol)
-                img_ol8 = img_ol*255
-                
-                save_file = f'{filelist[:-6]}T{frame}_{track_channel}.png'
-                save_path = os.path.join(img_save_dir,save_file)
-                imsave(save_path,img_ol8.astype("uint8"), check_contrast=False)
-        
-
-            
-        
-        print("Image: ",filename, "Frame: ",frame, " TIME: ", round(time.time() - start_time, 2))
-    
-#Get file names for all images# 
+#Get file names for all images#
 #%%
- 
-base_name = [x[:-9] for x in os.listdir(save_dir)]
-positions = [re.search(r'XY\d{3}', i, re.IGNORECASE).group() for i in file_list] #Change 2 to 3 if the n position is larger
+positions = sorted({re.search(r'XY\d{3}', i, re.IGNORECASE).group() for i in file_list}) #Change 2 to 3 if the n position is larger
 
 clist = dict()
 cfile_list = dict()
+track_file_list = dict()
 
 for position in positions:
     clist[f'{position}_list'] = [x for x in os.listdir(images_dir) if position in x]
     cfile_list[f'{position}'] = [os.path.join(images_dir, file_name) for file_name in clist[f'{position}_list']]
+    track_file_list[f'{position}'] = [x for x in clist[f'{position}_list'] if track_channel in x]
 
 
 #main measurement loop#
@@ -371,16 +302,83 @@ def process_position(pos_idx, pos):
         local_cyto_list.append(cyto)
 
     print(pos, "Finished in TIME: ", round(time.time() - start_time, 2))
-    return local_nuclei_list, local_cyto_list
+    return pos_idx, local_nuclei_list, local_cyto_list
 
 
-max_workers = min(len(positions), os.cpu_count() or 1)
+#Main segmentation loop for stacks#
+#This includes a component to downscale the image, then upscale the masks which saves time#
+#After each position is segmented, start measurement for that position while segmentation continues#
+max_workers = max(1, min(len(positions), (os.cpu_count() or 1) - 1))
+measurement_futures = []
+
 with ThreadPoolExecutor(max_workers=max_workers) as executor:
-    future_map = {executor.submit(process_position, pos_idx, pos): pos for pos_idx, pos in enumerate(positions)}
-    for future in as_completed(future_map):
-        pos_nuclei, pos_cyto = future.result()
-        nuclei_list.extend(pos_nuclei)
-        cyto_list.extend(pos_cyto)
+    for pos_idx, position in enumerate(positions):
+        seg_start_time = time.time()
+        print(f"Starting segmentation for {position}")
+        for track_file in track_file_list[position]:
+            filename = os.path.join(images_dir, track_file)
+            timg = skimage.io.imread(filename, plugin="tifffile", is_ome=False)
+            for img, frame in zip(timg, times): #Added limiters to stop from processing the blank frames#
+                start_time = time.time()
+
+                if segmentation == True:
+                    if shading_corr == True: img = img/sh_dict[track_channel]
+                    #imgth = skimage.morphology.white_tophat(image = img, footprint=footprint)
+                    img_ds = skimage.transform.rescale(img, 0.5, anti_aliasing=True)
+                    imgsmooth = skimage.filters.gaussian(img_ds, sigma=0.2)
+                    masks, flows, styles, diams = model.eval(imgsmooth, diameter=diameter, channels=channels,
+                                                             flow_threshold=flow_thersh, cellprob_threshold=cellprob, batch_size = 16) #22,0.6,1.5
+
+                    masks_ds = np.round(skimage.transform.rescale(masks, 2, anti_aliasing=True)*2**16,0).astype(np.uint16)
+                    # save masks as png
+                    save_file = f'{track_file[:-4]}_T{frame}_mask.png'
+                    save_path = os.path.join(save_dir,save_file)
+                    imsave(save_path,masks_ds.astype("uint16"), check_contrast=False)
+
+                #Exports the last frame of each position, used for matching with fixed data later#
+                if frame == max(times):
+                    if last_frame_export == True:
+                        save_file = f'{track_file[:-6]}T{frame}_{track_channel}.tiff'
+                        save_path_lf = os.path.join(last_frame_dir,save_file)
+                        imsave(save_path_lf,img.astype("uint16"), check_contrast=False)
+
+                #Save image with/without segmentation outlines as downsampled png for QC tracks
+                if qc_image_export == True:
+                    if image_overlay == True:
+                        img_ol = np.stack([imgsmooth] * 3, axis=-1)
+
+                        outlines = skimage.segmentation.find_boundaries(masks, mode="inner")
+                        outY, outX = np.nonzero(outlines)
+
+                        img_ol = img_ol/ np.max(img_ol)
+                        img_ol[outY, outX] = np.array([1,0,1])
+
+                        img_ol8ds = skimage.transform.rescale(img_ol, 0.5, anti_aliasing=True, channel_axis=2)
+                        img_ol8ds = (img_ol8ds*255).astype(np.uint8)
+
+                        save_file = f'{track_file[:-6]}T{frame}_{track_channel}.png'
+                        save_path_qc = os.path.join(img_save_dir,save_file)
+                        imsave(save_path_qc,img_ol8ds, check_contrast=False)
+                    else:
+                        img_ol = img_ol/ np.max(img_ol)
+                        img_ol8 = img_ol*255
+
+                        save_file = f'{track_file[:-6]}T{frame}_{track_channel}.png'
+                        save_path = os.path.join(img_save_dir,save_file)
+                        imsave(save_path,img_ol8.astype("uint8"), check_contrast=False)
+
+                print("Image: ",filename, "Frame: ",frame, " TIME: ", round(time.time() - start_time, 2))
+
+        print(position, "Finished segmentation in TIME: ", round(time.time() - seg_start_time, 2))
+        measurement_futures.append(executor.submit(process_position, pos_idx, position))
+
+    position_results = []
+    for future in as_completed(measurement_futures):
+        position_results.append(future.result())
+
+for _, pos_nuclei, pos_cyto in sorted(position_results, key=lambda x: x[0]):
+    nuclei_list.extend(pos_nuclei)
+    cyto_list.extend(pos_cyto)
 
 
 dfnuc = pd.concat([pd.DataFrame(l) for l in nuclei_list],axis=0)
