@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 import cv2
 from scipy.ndimage import zoom
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 #%%
 
@@ -263,126 +264,123 @@ for position in positions:
 #main measurement loop#
 if foci == True: fociprint=np.ones((2, 2))
 search_radius = 40
-image=1
 nuclei_list=[]
 cyto_list=[]
 
-images=[]
-    
-for pos in positions:  
+
+def process_position(pos_idx, pos):
     start_time = time.time()
-    if calculate_jitter == True: jitter_dict = dict()
-      
+    local_nuclei_list = []
+    local_cyto_list = []
+
     #Read stack of times at positions pos#
-    
     images_large = [skimage.io.imread(channel) for channel in cfile_list[pos]]
     images = zoom(
-    images_large,
-    zoom=(1, 1, 0.5, 0.5),  
-    order=1)
-    
+        images_large,
+        zoom=(1, 1, 0.5, 0.5),
+        order=1)
+
     flowimg = images[channels_list.index(track_channel)]
-    
-    flowstack = np.zeros((testimg.shape[0], testimg.shape[1],  testimg.shape[2], 2), dtype = "float16")
-    
+
+    flowstack = np.zeros((testimg.shape[0], testimg.shape[1], testimg.shape[2], 2), dtype="float16")
+
     flow_time = time.time()
-    for i in range(flowimg.shape[0]):   
-        if i == 0: pre = flowimg[i] 
-        else: 
+    for i in range(flowimg.shape[0]):
+        if i == 0:
+            pre = flowimg[i]
+        else:
             post = flowimg[i]
             flowstack[i] = cv2.calcOpticalFlowFarneback(post, pre, pyr_scale=0.6, levels=5, winsize=8, iterations=1, poly_n=5, poly_sigma=1.1, flags=0, flow=None)
             pre = post
     print(pos, "Finished flow in TIME: ", round(time.time() - flow_time, 2))
     del(flowimg, pre, post)
-    
+
     #Get images at time = frame, make dictionary#
-    for frame, t_image in zip(times, range(0,(np.shape(images[0])[0]))): 
-        
-        
+    for frame, t_image in zip(times, range(0, (np.shape(images[0])[0]))):
         image_set = [image[t_image] for image in images]
         img_dict = dict()
         for chan, im in zip(channels_list, image_set):
             img_dict[f'{chan}'] = im
-            
+
         #Get shading correction images and correct#
         if shading_corr == True:
-            for sh_ch in shad_cor_ch: 
+            for sh_ch in shad_cor_ch:
                 uncor_im = img_dict[f'{sh_ch}']
-                shading_im = sh_dict[f'{sh_ch}'] 
+                shading_im = sh_dict[f'{sh_ch}']
                 cor_im = uncor_im/shading_im
                 cor_im = cor_im.astype(dtype="uint16")
                 img_dict[f'{sh_ch}'] = cor_im
-        
-        
-        
+
         #make the foci image, add to dict
         if foci == True:
-            img_dict["foci"] = skimage.morphology.white_tophat(image = img_dict[foci_channel], footprint=fociprint)
-        
-        
-        #Stack the dict images in one np array 
-        multilist = [value for key,value in img_dict.items()]
-        mc = np.stack(multilist,  axis=-1)
-        
+            img_dict["foci"] = skimage.morphology.white_tophat(image=img_dict[foci_channel], footprint=fociprint)
+
+        #Stack the dict images in one np array
+        multilist = [value for key, value in img_dict.items()]
+        mc = np.stack(multilist, axis=-1)
+
         #Load the mask image
         mask_file = [x for x in os.listdir(save_dir) if pos in x and f'_T{frame}' in x][0]  #Added underscore to f string to avoid false capture#
         mask_path = os.path.join(save_dir, mask_file)
-        mask = io.imread(mask_path) 
-        mask = np.round(skimage.transform.rescale(mask, 0.5, anti_aliasing=True)*2**16,0).astype(np.uint16)
-        mask = skimage.segmentation.clear_border(mask)  #Remove masks touching edge 
-        
+        mask = io.imread(mask_path)
+        mask = np.round(skimage.transform.rescale(mask, 0.5, anti_aliasing=True)*2**16, 0).astype(np.uint16)
+        mask = skimage.segmentation.clear_border(mask)  #Remove masks touching edge
+
         #Get ring for cytosol measurements
-        nc_mask = skimage.segmentation.expand_labels(mask, distance = 1) 
-        c_mask =skimage.segmentation.expand_labels(mask, distance = 4) 
-        c_mask = c_mask -  mask #nc_mask
-        
-        
+        c_mask = skimage.segmentation.expand_labels(mask, distance=4)
+        c_mask = c_mask - mask  #nc_mask
+
         #Measure nuc and cyto
-        nuclei = skimage.measure.regionprops_table(mask, mc, properties=['area', 'axis_major_length', 'centroid', 
+        nuclei = skimage.measure.regionprops_table(mask, mc, properties=['area', 'axis_major_length', 'centroid',
                                                                          'intensity_max', 'intensity_mean', 'label', 'perimeter'])
-        
+
         nuclei['image'] = mask_file[:-9]
-        nuclei['n_image']=image
-        nuclei['frame']=frame
-        nuclei['position']=pos
-        
+        nuclei['n_image'] = (pos_idx * len(times)) + t_image + 1
+        nuclei['frame'] = frame
+        nuclei['position'] = pos
+
         x_coords = np.round(nuclei["centroid-1"]).astype(int)
         y_coords = np.round(nuclei["centroid-0"]).astype(int)
-        
-        nuclei['flow_x'] = np.round(flowstack[t_image,y_coords, x_coords, 0], 2) 
-        nuclei['flow_y'] = np.round(flowstack[t_image,y_coords, x_coords, 1], 2) 
-        
-        for i,ch in enumerate(channels_list): 
-            nuclei[f'int_{ch}']= nuclei['area']*nuclei[f'intensity_mean-{i}']
-            
+
+        nuclei['flow_x'] = np.round(flowstack[t_image, y_coords, x_coords, 0], 2)
+        nuclei['flow_y'] = np.round(flowstack[t_image, y_coords, x_coords, 1], 2)
+
+        for i, ch in enumerate(channels_list):
+            nuclei[f'int_{ch}'] = nuclei['area']*nuclei[f'intensity_mean-{i}']
+
         #If jitter correction is enabled, capture the pre & post jitter images and calculate offset#
-        if calculate_jitter == True: 
-            
+        if calculate_jitter == True:
             if pd.to_numeric(frame) in frame_of_jitter:   #When images get loaded, capture in dictionary
-                
                 pre_jitter_frame = img_dict[track_channel]
                 post_jitter_frame = images[channels_list.index(track_channel)][t_image+1]
-                
+
                 jitter = skimage.registration.phase_cross_correlation(post_jitter_frame, pre_jitter_frame, normalization=None)[0]
                 nuclei['jitter_x'] = jitter[1]
                 nuclei['jitter_y'] = jitter[0]
 
-            else: 
+            else:
                 nuclei['jitter_x'] = 0
                 nuclei['jitter_y'] = 0
-         
-            
+
         cyto = skimage.measure.regionprops_table(c_mask, mc, properties=['intensity_mean', 'label'])
         cyto['image'] = mask_file[:-9]
-        cyto['n_image']=image
-        cyto['frame']=frame
-        
-        nuclei_list.append(nuclei)
-        cyto_list.append(cyto)
-        image=image+1
-        
-        
+        cyto['n_image'] = (pos_idx * len(times)) + t_image + 1
+        cyto['frame'] = frame
+
+        local_nuclei_list.append(nuclei)
+        local_cyto_list.append(cyto)
+
     print(pos, "Finished in TIME: ", round(time.time() - start_time, 2))
+    return local_nuclei_list, local_cyto_list
+
+
+max_workers = min(len(positions), os.cpu_count() or 1)
+with ThreadPoolExecutor(max_workers=max_workers) as executor:
+    future_map = {executor.submit(process_position, pos_idx, pos): pos for pos_idx, pos in enumerate(positions)}
+    for future in as_completed(future_map):
+        pos_nuclei, pos_cyto = future.result()
+        nuclei_list.extend(pos_nuclei)
+        cyto_list.extend(pos_cyto)
 
 
 dfnuc = pd.concat([pd.DataFrame(l) for l in nuclei_list],axis=0)
@@ -390,4 +388,3 @@ dfcyto = pd.concat([pd.DataFrame(l) for l in cyto_list],axis=0)
 
 dfnuc.to_csv("nuclei_cp2.csv", index=False)
 dfcyto.to_csv("cyto_cp2.csv", index=False)
-
