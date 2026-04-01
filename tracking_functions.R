@@ -1937,7 +1937,7 @@ TotalBackTrackHybridv7 <- function(df, positions, i_jump, m_jump, s_jump, jitter
   return(tracks)
 }
 
-TotalBackTrackHybridv8 <- function(sample, positions, i_jump, m_jump, s_jump, jitter_correction,
+TotalBackTrackHybridv8 <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
                                    jitter_frames, smod, m_thresh, frame_limit){
   df$time <- as.numeric(df$time)
   tracking <- list()
@@ -1945,7 +1945,8 @@ TotalBackTrackHybridv8 <- function(sample, positions, i_jump, m_jump, s_jump, ji
   nframe <- 1
   x <- 0
   
-  #sample <- df: If the function var name is sample, no name change should be needed#
+  sample <- df
+  rm(df)
   
   for(p in positions){
     
