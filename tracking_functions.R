@@ -672,6 +672,9 @@ back_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_corr
   return(tracks)
 }
 
+#Uses the old v6 or earlier jitter correction#
+#Update 4/26: Changed how it determines whether it's the first frame in movie#
+
 forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
                                  jitter_frames, smod, m_thresh, frame_limit_f, minframe){
   df$time <- as.numeric(df$time)
@@ -709,7 +712,7 @@ forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_c
             shift_y <- 0}
             
             
-            if(c == 2){
+            if(c == minframe+1){
               max.jump <- i_jump
               x_cur <- cur_object$x
               y_cur <- cur_object$y 
@@ -847,6 +850,9 @@ forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_c
   tracks <- as.data.frame(tracking)
   return(tracks)
 }
+
+#Uses the old v6 or earlier jitter correction#
+#Update 4/26: Changed how it determines whether it's the first frame in movie#
 
 total_forward_track_hybrid <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
                                        jitter_frames, smod, m_thresh, frame_limit_f, minframe){
@@ -1616,6 +1622,8 @@ TrackLinkJitterv7 <- function(positions, btracked, ftracked, jump, m_thresh,
   return(btracked_filt)
 }
 
+#Note that this uses updated jitter correction calculation method from the v7-v9 python code#
+
 ForwardTrackAssembly <- function(positions, ftracked, jump, m_thresh, 
                           StabilityValue, jitter_correction, jitter_frames, minframe){
   cur_frame <- minframe
@@ -1680,6 +1688,8 @@ ForwardTrackAssembly <- function(positions, ftracked, jump, m_thresh,
   }
   return(ftracked_filt)
 }
+
+#Note that this uses updated jitter correction calculation method from the v7-v9 python code#
 
 BackwardTrackAssembly <- function(positions, btracked, jump, m_thresh, 
                                   StabilityValue, jitter_correction, jitter_frames){
