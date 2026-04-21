@@ -2201,3 +2201,16 @@ BackwardTrackAssemblyv2 <- function(positions, btracked_filt, jump, m_thresh,
   }
   return(btracked_filt)
 }
+
+#Function for quick-lookup of cell ids by cell position#
+
+lookup <- function(df, xs, ys, time_name, time_val, ex){
+  
+  
+  result <- df %>% filter(
+    .data[[time_name]] == time_val,
+    dplyr::between(x, xs - ex, xs + ex),
+    dplyr::between(y, ys - ex, ys + ex)
+  )
+  return(result)
+}
