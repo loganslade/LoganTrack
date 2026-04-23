@@ -2214,3 +2214,253 @@ lookup <- function(df, xs, ys, time_name, time_val, ex){
   )
   return(result)
 }
+
+######New Backtrack: Apparently improved performance#####
+TotalBackTrackHybridv9 <- function(df, positions, i_jump, m_jump, s_jump, jitter_correction,
+                                   jitter_frames, smod, m_thresh, frame_limit, dist_limit){
+  
+  
+  df$time <- as.numeric(df$time)
+  max_links <- nrow(df)
+  tracking <- vector("list", max_links) #Initialize the tracking vector
+  
+  seen <- new.env(hash = TRUE, parent = emptyenv())
+  
+  cur_frame <- max(df$time)
+  nframe <- frame_limit
+  x <- 0
+  p <- positions
+  
+  
+  if(jitter_correction == T){
+    jitters <- df %>% filter(time %in% jitter_frames) %>% distinct(time, jitter_x, jitter_y)}
+  
+  track_set <- df %>% dplyr::select(c("x","y", "i_id", "flow_x", "flow_y", "n_image", "time", "scale_ms"))
+  
+  while(cur_frame > nframe){                  
+    nobj_frame <- track_set %>% filter(time == cur_frame) %>% nrow(.)
+    
+    print(paste0("Tracking ",nobj_frame, " in frame: ", cur_frame))
+    
+    if(nobj_frame < 1){cur_frame <- cur_frame-1
+    break}
+    for(b in 1:nobj_frame){
+      set <- track_set[track_set$time == cur_frame,]
+      cur_object <- set[b,]
+      track_id <- cur_object$i_id
+      
+      #if(length(tracking) > 0 && cur_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == cur_frame]) {next}
+      
+      if(exists(paste(p, cur_object$i_id, cur_frame, sep = "_"), envir = seen, inherits = FALSE)) {
+        next
+      }
+      
+      else{
+        for(c in (cur_frame-1):frame_limit){
+          
+          if(jitter_correction == T && c %in% jitters$time){shift_x <- jitters$jitter_x[jitters$time == c]
+          shift_y <- jitters$jitter_y[jitters$time == c]}
+          
+          else{shift_x <- 0 
+          shift_y <- 0}
+          
+          
+          if(c == cur_frame-1){
+            max.jump <- i_jump
+            
+            x_cur <- cur_object$x
+            y_cur <- cur_object$y 
+            
+            search <- track_set[track_set$time == c,]
+            
+            #Track objects for the T1 - T2 frames#
+            
+            if(cur_object$scale_ms > m_thresh){
+              
+              next_object <- filter(search, between(search$x,((cur_object$x + (cur_object$flow_x*smod))- max.jump), ((cur_object$x + (cur_object$flow_x*smod)) + max.jump)) &
+                                      between(search$y,((cur_object$y + (cur_object$flow_y*smod)) - max.jump), ((cur_object$y + (cur_object$flow_y*smod)) + max.jump))) 
+            }
+            
+            else{
+              next_object <- filter(search, between(search$x,(cur_object$x-shift_x - max.jump), (cur_object$x-shift_x + max.jump)) &
+                                      between(search$y,(cur_object$y-shift_y - max.jump), (cur_object$y-shift_y + max.jump))) 
+            }
+            
+            
+            if(nrow(next_object) == 1){
+              
+              #if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break}
+              if(exists(paste(p, next_object$i_id, c, sep = "_"), envir = seen, inherits = FALSE)) {break}
+              
+              x <- x+1
+              
+              x_next <- next_object$x
+              y_next <- next_object$y
+              x_traj <- x_next-(x_cur-shift_x) 
+              y_traj <- y_next-(y_cur-shift_y)
+              
+              tracking[[x]] <- list(
+                position = p,
+                i_id     = next_object$i_id,
+                time     = next_object$time,
+                parent   = cur_object$i_id,
+                track_id = track_id,
+                x_traj   = x_traj,
+                y_traj   = y_traj,
+                enext_x  = next_object$x + x_traj,
+                enext_y  = next_object$y + y_traj
+              )
+              
+              key <- paste(p, next_object$i_id, next_object$time, sep = "_")
+              assign(key, TRUE, envir = seen)
+              
+              cur_object <- next_object}
+            else if(nrow(next_object) >1){
+              
+              if(cur_object$scale_ms > m_thresh){
+                next_object <- next_object %>% mutate(distance = sqrt((((cur_object$x+(cur_object$flow_x*smod))-x)^2)+(((cur_object$y+cur_object$flow_y*smod)-y)^2)))} 
+              
+              else{
+                next_object <- next_object %>% mutate(distance = sqrt((((cur_object$x-shift_x)-x)^2)+(((cur_object$y-shift_y)-y)^2))) 
+              }
+              d_min <- min(next_object$distance)
+              d_max <- max(next_object$distance)
+              d_ratio <- d_max/d_min
+              if(d_ratio < dist_limit) {break}
+              next_object <- next_object %>% slice(which.min(distance)) #make it select only short distances
+              #if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break}
+              
+              if(exists(paste(p, next_object$i_id, c, sep = "_"), envir = seen, inherits = FALSE)) {break}
+              
+              x <- x+1
+              
+              x_next <- next_object$x
+              y_next <- next_object$y
+              x_traj <- x_next-(x_cur-shift_x)  
+              y_traj <- y_next-(y_cur-shift_y)
+              
+              tracking[[x]] <- list(
+                position = p,
+                i_id     = next_object$i_id,
+                time     = next_object$time,
+                parent   = cur_object$i_id,
+                track_id = track_id,
+                x_traj   = x_traj,
+                y_traj   = y_traj,
+                enext_x  = next_object$x + x_traj,
+                enext_y  = next_object$y + y_traj
+              )
+              
+              key <- paste(p, next_object$i_id, next_object$time, sep = "_")
+              assign(key, TRUE, envir = seen)
+              
+              cur_object <- next_object}
+            else {break} 
+          }
+          
+          #Track objects with motion for all other frames except the T1-T2, expect if M#
+          
+          else{
+            max.jump <- s_jump
+            x_cur <- cur_object$x
+            y_cur <- cur_object$y 
+            cur_object$enext_x <- (x_cur-shift_x) + x_traj #add enext-j calc hear
+            cur_object$enext_y <- (y_cur-shift_y) + y_traj 
+            search <- track_set[track_set$time == c,]
+            
+            if(cur_object$scale_ms > m_thresh){
+              
+              next_object <- filter(search, between(search$x,((cur_object$x + (cur_object$flow_x*smod))- max.jump), ((cur_object$x + (cur_object$flow_x*smod)) + max.jump)) &
+                                      between(search$y,((cur_object$y + (cur_object$flow_y*smod)) - max.jump), ((cur_object$y + (cur_object$flow_y*smod)) + max.jump))) 
+            }
+            
+            else{
+              next_object <- filter(search, between(search$x,((cur_object$x - shift_x+(x_traj*smod))- max.jump), ((cur_object$x - shift_x+(x_traj*smod)) + max.jump)) &
+                                      between(search$y,((cur_object$y - shift_y+(y_traj*smod)) - max.jump), ((cur_object$y - shift_y + (y_traj*smod)) + max.jump))) 
+            }
+            
+            if(nrow(next_object) == 1){
+              
+              #if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break} 
+              if(exists(paste(p, next_object$i_id, c, sep = "_"), envir = seen, inherits = FALSE)) {break}
+              
+              x <- x+1
+              
+              x_next <- next_object$x
+              y_next <- next_object$y
+              x_traj <- x_next-(x_cur-shift_x) 
+              y_traj <- y_next-(y_cur-shift_y)
+              
+              tracking[[x]] <- list(
+                position = p,
+                i_id     = next_object$i_id,
+                time     = next_object$time,
+                parent   = cur_object$i_id,
+                track_id = track_id,
+                x_traj   = x_traj,
+                y_traj   = y_traj,
+                enext_x  = next_object$x + x_traj,
+                enext_y  = next_object$y + y_traj
+              )
+              
+              key <- paste(p, next_object$i_id, next_object$time, sep = "_")
+              assign(key, TRUE, envir = seen)
+              
+              cur_object <- next_object}
+            
+            else if(nrow(next_object) >1){
+              
+              if(cur_object$scale_ms > m_thresh){
+                next_object <- next_object %>% mutate(distance = sqrt((((cur_object$x+(cur_object$flow_x*smod))-x)^2)+(((cur_object$y+cur_object$flow_y*smod)-y)^2)))} 
+              
+              else{
+                next_object <- next_object %>% mutate(distance = sqrt(((cur_object$enext_x-x)^2)+((cur_object$enext_y-y)^2)))} #removed the enext calcu from hear 
+              
+              d_min <- min(next_object$distance)
+              d_max <- max(next_object$distance)
+              d_ratio <- d_max/d_min
+              if(d_ratio < dist_limit) {break}
+              next_object <- next_object %>% slice(which.min(distance)) 
+              
+              #if(length(tracking) > 0 && next_object$i_id %in% tracking$i_id[tracking$position == p & tracking$time == c]) {break}
+              if(exists(paste(p, next_object$i_id, c, sep = "_"), envir = seen, inherits = FALSE)) {break}
+              
+              
+              
+              x <- x+1
+              
+              x_next <- next_object$x
+              y_next <- next_object$y
+              x_traj <- x_next-(x_cur-shift_x) 
+              y_traj <- y_next-(y_cur-shift_y)
+              
+              tracking[[x]] <- list(
+                position = p,
+                i_id     = next_object$i_id,
+                time     = next_object$time,
+                parent   = cur_object$i_id,
+                track_id = track_id,
+                x_traj   = x_traj,
+                y_traj   = y_traj,
+                enext_x  = next_object$x + x_traj,
+                enext_y  = next_object$y + y_traj
+              )
+              
+              key <- paste(p, next_object$i_id, next_object$time, sep = "_")
+              assign(key, TRUE, envir = seen)
+              
+              cur_object <- next_object}
+            else {break}
+            
+          }
+        }
+      }
+    }
+    cur_frame <- cur_frame-1
+  }
+  
+  tracks <- dplyr::bind_rows(tracking)
+  print(paste0("Completed position:",p))
+  return(tracks)
+  
+}
