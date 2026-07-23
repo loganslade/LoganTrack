@@ -581,7 +581,7 @@ server <- function(input, output, session) {
   },
   width = plot_width_fn,
   height = plot_height_fn,
-  res = function() safe_num(input$plot_res, 96)
+  res = input$plot_res
   )
   
   observe({
@@ -600,7 +600,7 @@ server <- function(input, output, session) {
         },
         width = panel_plot_width_fn,
         height = plot_height_fn,
-        res = function() safe_num(input$plot_res, 96)
+        res = input$plot_res
         )
       })
     }
