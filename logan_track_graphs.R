@@ -15,9 +15,17 @@ safe_num <- function(x, default) {
 }
 
 sample_tracks_per_strata <- function(df, track_var = "track_id", strata_vars = character(), max_n = Inf) {
-  if (!track_var %in% names(df) || is.infinite(max_n) || is.null(max_n) || max_n <= 0) {
+  max_n <- suppressWarnings(as.numeric(max_n))
+  if (
+    !track_var %in% names(df) ||
+      length(max_n) != 1 ||
+      is.na(max_n) ||
+      !is.finite(max_n) ||
+      max_n <= 0
+  ) {
     return(df)
   }
+  max_n <- floor(max_n)
   
   strata_vars <- strata_vars[strata_vars %in% names(df)]
   distinct_tracks <- df %>% distinct(across(all_of(c(strata_vars, track_var))))
@@ -109,7 +117,12 @@ ui <- fluidPage(
         selectizeInput("filter_cols", "Columns to filter", choices = NULL, multiple = TRUE),
         uiOutput("filter_ui"),
         h4("Downsampling"),
-        numericInput("max_lines", "Max lines per group/facet", value = 250, min = 1, step = 1)
+        textInput(
+          "max_lines",
+          "Max lines per group/facet",
+          value = "",
+          placeholder = "None (no downsampling)"
+        )
       )
     ),
     column(
