@@ -565,7 +565,11 @@ server <- function(input, output, session) {
     req(!isTRUE(input$use_multi_measure) || length(y_vars) == 1)
     req(length(y_vars) >= 1)
     build_plot(st$df, y_vars[[1]])
-  }, width = plot_width_fn, height = plot_height_fn)
+  },
+  width = plot_width_fn,
+  height = plot_height_fn,
+  res = function() safe_num(input$plot_res, 96)
+  )
   
   observe({
     req(input$draw_plot > 0)
@@ -580,7 +584,11 @@ server <- function(input, output, session) {
         y_var_i <- y_vars[[idx]]
         output[[paste0("line_plot_", idx)]] <- renderPlot({
           build_plot(st$df, y_var_i)
-        }, width = panel_plot_width_fn, height = plot_height_fn)
+        },
+        width = panel_plot_width_fn,
+        height = plot_height_fn,
+        res = function() safe_num(input$plot_res, 96)
+        )
       })
     }
   })
@@ -596,8 +604,10 @@ server <- function(input, output, session) {
       
       grDevices::pdf(
         file = file,
-        width = safe_num(input$plot_width, 1100) / 96,
-        height = safe_num(input$plot_height, 780) / 96
+        # Match the viewer's physical device dimensions so that ggplot text
+        # and other point-sized elements retain the same relative scale.
+        width = plot_width_fn() / safe_num(input$plot_res, 96),
+        height = plot_height_fn() / safe_num(input$plot_res, 96)
       )
       on.exit(grDevices::dev.off(), add = TRUE)
       
