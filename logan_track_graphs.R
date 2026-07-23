@@ -571,18 +571,22 @@ server <- function(input, output, session) {
     )
   })
   
-  output$line_plot <- renderPlot({
+  observe({
     req(input$draw_plot > 0)
-    st <- plot_state()
-    y_vars <- st$y_vars
-    req(!isTRUE(input$use_multi_measure) || length(y_vars) == 1)
-    req(length(y_vars) >= 1)
-    build_plot(st$df, y_vars[[1]])
-  },
-  width = plot_width_fn,
-  height = plot_height_fn,
-  res = input$plot_res
-  )
+    res <- safe_num(input$plot_res, 96)
+    
+    output$line_plot <- renderPlot({
+      st <- plot_state()
+      y_vars <- st$y_vars
+      req(!isTRUE(input$use_multi_measure) || length(y_vars) == 1)
+      req(length(y_vars) >= 1)
+      build_plot(st$df, y_vars[[1]])
+    },
+    width = plot_width_fn,
+    height = plot_height_fn,
+    res = res
+    )
+  })
   
   observe({
     req(input$draw_plot > 0)
