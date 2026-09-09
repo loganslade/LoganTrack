@@ -2464,3 +2464,88 @@ TotalBackTrackHybridv9 <- function(df, positions, i_jump, m_jump, s_jump, jitter
   return(tracks)
   
 }
+
+# Convert XY position labels or filenames to well IDs (base R only).
+# plate_format: standard well count, or c(rows, columns) for a custom plate.
+# Positions must be numbered consecutively from 1, with all positions for
+# each well collected together. Both snake directions begin at A1.
+# Horizontal: across row A, then backwards across row B, etc.
+# Vertical: down column 1, then upwards through column 2, etc.
+# Missing inputs stay NA; malformed or out-of-range positions raise an error.
+# Repeated inputs are converted once, then matched back to the original rows.
+position_to_well <- function(x, plate_format = 6, positions_per_well = 8,
+                             snake = c("horizontal", "vertical")) {
+  snake <- match.arg(snake)
+  positive_integers <- function(v) {
+    is.numeric(v) && length(v) > 0L &&
+      all(is.finite(v) & v > 0 & v == floor(v))
+  }
+  if (!positive_integers(positions_per_well) || length(positions_per_well) != 1L) {
+    stop("positions_per_well must be one positive integer.")
+  }
+  formats <- list(`6` = c(2, 3), `12` = c(3, 4), `24` = c(4, 6),
+                  `48` = c(6, 8), `96` = c(8, 12), `384` = c(16, 24),
+                  `1536` = c(32, 48))
+  if (!positive_integers(plate_format) || !length(plate_format) %in% c(1L, 2L)) {
+    stop("plate_format must be a standard well count or c(rows, columns).")
+  }
+  dims <- if (length(plate_format) == 1L) {
+    formats[[as.character(plate_format)]]
+  } else plate_format
+  if (is.null(dims)) {
+    stop("Unsupported plate format; use 6, 12, 24, 48, 96, 384, 1536, or c(rows, columns).")
+  }
+  if (!is.character(x)) stop("x must be a character vector of XY labels or filenames.")
+  input_names <- names(x)
+  unique_x <- unique(x)
+  input_index <- match(x, unique_x)
+  x <- unique_x
+  # Remove directories so an XY label in a folder name is not mistaken for a position.
+  filenames <- basename(gsub("\\\\", "/", x))
+  matches <- regmatches(filenames, gregexpr("(?i)(?<![A-Z0-9])XY[0-9]+(?![A-Z0-9])",
+                                            filenames, perl = TRUE))
+  present <- !is.na(x)
+  if (any(lengths(matches)[present] != 1L)) {
+    stop("Each non-missing filename must contain exactly one XY position (for example XY011).")
+  }
+  position <- rep(NA_real_, length(x))
+  position[present] <- as.numeric(sub("(?i)^XY", "", unlist(matches[present]), perl = TRUE))
+  capacity <- prod(dims) * positions_per_well
+  if (any(!is.finite(position[present]) | position[present] < 1 |
+          position[present] > capacity)) {
+    stop("XY positions must be between 1 and ", capacity, " for this configuration.")
+  }
+  well_index <- (position - 1) %/% positions_per_well
+  if (snake == "horizontal") {
+    row <- well_index %/% dims[2] + 1
+    col <- well_index %% dims[2] + 1
+    col <- ifelse(row %% 2 == 0, dims[2] + 1 - col, col)
+  } else {
+    col <- well_index %/% dims[1] + 1
+    row <- well_index %% dims[1] + 1
+    row <- ifelse(col %% 2 == 0, dims[1] + 1 - row, row)
+  }
+  row_label <- function(n) {
+    label <- ""
+    while (n > 0) {
+      label <- paste0(LETTERS[(n - 1) %% 26 + 1], label)
+      n <- (n - 1) %/% 26
+    }
+    label
+  }
+  result <- rep(NA_character_, length(x))
+  unique_rows <- unique(row[present])
+  row_labels <- vapply(unique_rows, row_label, character(1))
+  result[present] <- paste0(row_labels[match(row[present], unique_rows)], col[present])
+  result <- result[input_index]
+  names(result) <- input_names
+  result
+}
+
+# Examples:
+# position_to_well(c("image_XY001_C1.tif", "XY008", "XY009", "XY011"))
+# # "A1" "A1" "A2" "A2"
+# position_to_well(sprintf("XY%03d", seq(1, 48, by = 8)), snake = "horizontal")
+# # "A1" "A2" "A3" "B3" "B2" "B1"
+# position_to_well(sprintf("XY%03d", seq(1, 48, by = 8)), snake = "vertical")
+# # "A1" "B1" "B2" "A2" "A3" "B3"
